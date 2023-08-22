@@ -1,0 +1,2116 @@
+Parameters:
+  CognitoDomainPrefix:
+    Description: Cognito Hosted UI domain prefix
+    Type: String
+    Default: my-domain-0303456
+  Cloud9PreviewUrl:
+    Description: Cloud9 instance preview URL
+    Type: String
+    Default: localhost:3000
+
+Resources:
+  TinyTodoTable8B57AD70:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+        - AttributeName: sk
+          KeyType: RANGE
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+        - AttributeName: sk
+          AttributeType: S
+        - AttributeName: owner
+          AttributeType: S
+        - AttributeName: listId
+          AttributeType: "N"
+      BillingMode: PAY_PER_REQUEST
+      GlobalSecondaryIndexes:
+        - IndexName: OwnerListIdIndex
+          KeySchema:
+            - AttributeName: owner
+              KeyType: HASH
+            - AttributeName: listId
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      TableName: TinyTodoTable
+    UpdateReplacePolicy: Delete
+    DeletionPolicy: Delete
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoTable/Resource
+  TinyTodoCognitoPreSignUpLambdaServiceRole7B690327:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+        Version: "2012-10-17"
+      ManagedPolicyArns:
+        - Fn::Join:
+            - ""
+            - - "arn:"
+              - Ref: AWS::Partition
+              - :iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoCognitoPreSignUpLambda/ServiceRole/Resource
+  TinyTodoCognitoPreSignUpLambdaDCAA2584:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        ZipFile: |
+          import json
+
+          Response = object
+
+
+          def debug_object(obj: object) -> None:
+              print(json.dumps(obj, indent=2, default=str).replace("\n", "\r"))
+
+
+          def handler(event, context) -> Response:
+              debug_object(event)
+              # Confirm the user
+              event["response"]["autoConfirmUser"] = True
+
+              # Return to Amazon Cognito
+              return event
+
+      Role:
+        Fn::GetAtt:
+          - TinyTodoCognitoPreSignUpLambdaServiceRole7B690327
+          - Arn
+      FunctionName: TinyTodoCognitoPreSignUpLambda
+      Handler: handler.handler
+      MemorySize: 1024
+      Runtime: python3.9
+      Timeout: 30
+    DependsOn:
+      - TinyTodoCognitoPreSignUpLambdaServiceRole7B690327
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoCognitoPreSignUpLambda/Resource
+      aws:asset:path: asset.9e2c03d0692a56a49173083ce2931ff3b702544a4ac037397d3a1ed2adec3dd1
+      aws:asset:is-bundled: false
+      aws:asset:property: Code
+  TinyTodoCognitoPostConfirmLambdaServiceRole9AA6C024:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+        Version: "2012-10-17"
+      ManagedPolicyArns:
+        - Fn::Join:
+            - ""
+            - - "arn:"
+              - Ref: AWS::Partition
+              - :iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoCognitoPostConfirmLambda/ServiceRole/Resource
+  TinyTodoCognitoPostConfirmLambdaServiceRoleDefaultPolicy83600BC2:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Action:
+              - dynamodb:BatchGetItem
+              - dynamodb:GetRecords
+              - dynamodb:GetShardIterator
+              - dynamodb:Query
+              - dynamodb:GetItem
+              - dynamodb:Scan
+              - dynamodb:ConditionCheckItem
+              - dynamodb:BatchWriteItem
+              - dynamodb:PutItem
+              - dynamodb:UpdateItem
+              - dynamodb:DeleteItem
+              - dynamodb:DescribeTable
+            Effect: Allow
+            Resource:
+              - Fn::GetAtt:
+                  - TinyTodoTable8B57AD70
+                  - Arn
+              - Fn::Join:
+                  - ""
+                  - - Fn::GetAtt:
+                        - TinyTodoTable8B57AD70
+                        - Arn
+                    - /index/*
+        Version: "2012-10-17"
+      PolicyName: TinyTodoCognitoPostConfirmLambdaServiceRoleDefaultPolicy83600BC2
+      Roles:
+        - Ref: TinyTodoCognitoPostConfirmLambdaServiceRole9AA6C024
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoCognitoPostConfirmLambda/ServiceRole/DefaultPolicy/Resource
+  TinyTodoCognitoPostConfirmLambdaCF819FFA:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        ZipFile: |
+          import json
+          import database
+
+          Response = object
+
+
+          def debug_object(obj: object) -> None:
+              print(json.dumps(obj, indent=2, default=str).replace("\n", "\r"))
+
+
+          def handler(event, context) -> Response:
+              debug_object(event)
+              debug_object(context)
+
+              user_pool_id = event["userPoolId"]
+              sub = event["request"]["userAttributes"]["sub"]
+
+              user_name = event["userName"]
+              userId = "{}|{}".format(user_pool_id, sub)
+
+              database.create_user(userId, user_name)
+
+              # Create a user in the database and create their first list of tasks
+              list_count = database.count_lists(userId)
+              if list_count == 0:
+                  with open("resources/starter-list.json") as starter_list_file:
+                      starter_list = json.load(starter_list_file)
+
+                  list_id = database.create_list(userId, starter_list["name"], starter_list["description"])
+                  for task in starter_list["tasks"]:
+                      database.create_task(list_id, task["name"], task["description"])
+                  return event
+              else:
+                  return event
+
+      Role:
+        Fn::GetAtt:
+          - TinyTodoCognitoPostConfirmLambdaServiceRole9AA6C024
+          - Arn
+      FunctionName: TinyTodoCognitoPostConfirmLambda
+      Handler: handler.handler
+      MemorySize: 1024
+      Runtime: python3.9
+      Timeout: 30
+    DependsOn:
+      - TinyTodoCognitoPostConfirmLambdaServiceRoleDefaultPolicy83600BC2
+      - TinyTodoCognitoPostConfirmLambdaServiceRole9AA6C024
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoCognitoPostConfirmLambda/Resource
+      aws:asset:path: asset.a8008dbb7b20d85ad4f75d064737c582660901e861b391937473c530a48fed28
+      aws:asset:is-bundled: false
+      aws:asset:property: Code
+  TinyTodoApiLambdaServiceRole879744AD:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+        Version: "2012-10-17"
+      ManagedPolicyArns:
+        - Fn::Join:
+            - ""
+            - - "arn:"
+              - Ref: AWS::Partition
+              - :iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoApiLambda/ServiceRole/Resource
+  TinyTodoApiLambdaServiceRoleDefaultPolicy3A4DA593:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Action:
+              - dynamodb:BatchGetItem
+              - dynamodb:GetRecords
+              - dynamodb:GetShardIterator
+              - dynamodb:Query
+              - dynamodb:GetItem
+              - dynamodb:Scan
+              - dynamodb:ConditionCheckItem
+              - dynamodb:BatchWriteItem
+              - dynamodb:PutItem
+              - dynamodb:UpdateItem
+              - dynamodb:DeleteItem
+              - dynamodb:DescribeTable
+            Effect: Allow
+            Resource:
+              - Fn::GetAtt:
+                  - TinyTodoTable8B57AD70
+                  - Arn
+              - Fn::Join:
+                  - ""
+                  - - Fn::GetAtt:
+                        - TinyTodoTable8B57AD70
+                        - Arn
+                    - /index/*
+          - Action:
+              - verifiedpermissions:CreatePolicy
+              - verifiedpermissions:DeletePolicy
+              - verifiedpermissions:IsAuthorized
+              - verifiedpermissions:IsAuthorizedWithToken
+              - verifiedpermissions:ListPolicies
+              - verifiedpermissions:ListPolicyStores
+              - verifiedpermissions:ListPolicyTemplates
+              - verifiedpermissions:GetPolicyTemplate
+            Effect: Allow
+            Resource: "*"
+        Version: "2012-10-17"
+      PolicyName: TinyTodoApiLambdaServiceRoleDefaultPolicy3A4DA593
+      Roles:
+        - Ref: TinyTodoApiLambdaServiceRole879744AD
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoApiLambda/ServiceRole/DefaultPolicy/Resource
+  TinyTodoApiLambda63A29A37:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        ZipFile: |
+          from jose import JWTError
+          import json
+          import jwt
+
+          import database
+          import permissions
+          from util import debug_object
+
+          Response = object
+
+          ACTIONS = {
+              # Task-list CRUD
+              ("/task-list/create", "POST"): "CreateList",
+              ("/task-list/read", "GET"): "ReadList",
+              ("/task-list/update", "PUT"): "UpdateList",
+              ("/task-list/delete", "DELETE"): "DeleteList",
+              # Task CRUD
+              ("/task/create", "POST"): "CreateTask",
+              ("/task/read", "GET"): "ReadTask",
+              ("/task/update", "PUT"): "UpdateTask",
+              ("/task/delete", "DELETE"): "DeleteTask",
+              # Share CRUD
+              ("/share/create", "POST"): "CreateShare",
+              ("/share/read", "GET"): "ReadShare",
+              ("/share/update", "PUT"): "UpdateShare",
+              ("/share/delete", "DELETE"): "DeleteShare",
+              # List Operations
+              ("/list/task-lists", "GET"): "ListLists",
+              ("/list/tasks", "GET"): "ListTasks",
+              ("/list/shares", "GET"): "ListShares",
+              ("/list/shared-lists", "GET"): "ListSharedLists",
+          }
+
+
+          def handler(event, context) -> Response:
+              debug_object(event)
+              debug_object(context)
+
+              # Get the information about the requested action
+              resource = event["resource"]
+              method = event["httpMethod"]
+              action = ACTIONS.get((resource, method), "Unknown")
+              if action == "Unknown":
+                  return format_response({"message": "Unknown API call"}, 404)
+
+              # Get the information about the principal from the JWT token
+              access_token = event["headers"]["Authorization"].split(" ")[1]
+              try:
+                  jwt_claims = jwt.decode(access_token, options={"verify_signature": False})
+                  debug_object(jwt_claims)
+                  user_pool_id = jwt_claims["iss"].split("/")[-1]
+                  principal = "{}|{}".format(user_pool_id, jwt_claims["sub"])
+              except JWTError as e:
+                  debug_object(e)
+                  return format_response({"message": "Access denied -- token broken"}, 401)
+
+              # Variables that exist only on some requests
+              list_id = None
+              task_id = None
+              user = None
+              name = None
+              description = None
+              role = None
+              if event["body"]:
+                  body = json.loads(event["body"])
+                  name = body["name"] if "name" in body else None
+                  description = body["description"] if "description" in body else None
+                  role = body["role"] if "role" in body else None
+                  list_id = int(body["listId"]) if "listId" in body else None
+                  task_id = int(body["taskId"]) if "taskId" in body else None
+                  if "user" in body:
+                      user = body["user"]
+                      if user != principal:
+                          user = database.query_user_key(user)
+                          print("Using: {} to use as share key".format(user))
+                      if user == "":
+                          return format_response({"message": "Invalid input -- user doesn't exist."}, 401)
+              elif event["queryStringParameters"]:
+                  list_id = int(event["queryStringParameters"]["listId"]) if "listId" in event["queryStringParameters"] else None
+                  task_id = int(event["queryStringParameters"]["taskId"]) if "taskId" in event["queryStringParameters"] else None
+
+              # Check if the list exists
+              if list_id and database.get_list(list_id) is None:
+                  return format_response({"message": "Invalid input -- list doesn't exist"}, 400)
+              task_list = list_id and database.get_list(list_id)
+
+              debug_object(principal)
+              debug_object(action)
+              debug_object(task_list)
+
+              # Basic permissions check
+              if permissions.permissions_check(principal, action, task_list) == "DENY":
+                  return format_response({"message": "Access denied -- permissions check failed"}, 401)
+              # id_token = event.get("headers", {}).get("id-token")
+              # if not id_token:
+              #     return format_response({"message": "Access denied -- no identity token provided"}, 401)
+              # try:
+              #     if permissions.permissions_check_token(id_token, action, task_list) == "DENY":
+              #         return format_response({"message": "Access denied -- permissions check failed"}, 401)
+              # except Exception as e:
+              #     return format_response({"message": f"Access denied -- permissions check failed - {str(e)}"}, 401)
+
+              if action == "ListLists":
+                  return list_lists(principal)
+              elif action == "CreateList":
+                  return create_list(principal, name, description)
+              elif action == "ReadList":
+                  return get_list(list_id)
+              elif action == "UpdateList":
+                  return update_list(list_id, name, description)
+              elif action == "DeleteList":
+                  return delete_list(list_id)
+              elif action == "ListTasks":
+                  return list_tasks(list_id)
+              elif action == "CreateTask":
+                  return create_task(list_id, name, description)
+              elif action == "UpdateTask":
+                  return update_task(list_id, task_id, name, description)
+              elif action == "DeleteTask":
+                  return delete_task(list_id, task_id)
+              elif action == "ListShares":
+                  return list_shares(list_id)
+              elif action == "CreateShare":
+                  return create_share(list_id, user, role)
+              elif action == "UpdateShare":
+                  return update_share(list_id, user, role)
+              elif action == "DeleteShare":
+                  return delete_share(list_id, user)
+              elif action == "ListSharedLists":
+                  return list_shared_lists(principal)
+
+
+          def list_lists(user: str) -> Response:
+              return format_response({"lists": database.list_lists(user)})
+
+
+          def create_list(user: str, name: str, description: str) -> Response:
+              return format_response({"listId": database.create_list(user, name, description)})
+
+
+          def get_list(list_id: int) -> Response:
+              return format_response({"list": database.get_list(list_id)})
+
+
+          def update_list(list_id: int, name: str, description: str) -> Response:
+              database.update_list(list_id, name, description)
+              return format_response({})
+
+
+          def delete_list(list_id: int) -> Response:
+              task_count = database.count_tasks(list_id)
+
+              # Note: Race condition allows us to delete lists that have tasks added at the last moment. Oh, well.
+              if task_count > 0:
+                  return format_response({"message": "List not empty"}, 400)
+              else:
+                  database.delete_list(list_id)
+                  return format_response({})
+
+
+          def list_tasks(list_id: int) -> Response:
+              return format_response({"tasks": database.list_tasks(list_id)})
+
+
+          def create_task(list_id: int, name: str, description: str) -> Response:
+              return format_response({"taskId": database.create_task(list_id, name, description)})
+
+
+          def update_task(list_id: int, task_id: int, name: str, description: str) -> Response:
+              database.update_task(list_id, task_id, name, description)
+              return format_response({})
+
+
+          def delete_task(list_id, task_id) -> Response:
+              database.delete_task(list_id, task_id)
+              return format_response({})
+
+
+          def list_shares(list_id: int) -> Response:
+              return format_response({"shares": permissions.list_shares(list_id)})
+
+
+          def create_share(list_id: int, user: str, role: str) -> Response:
+              try:
+                  permissions.create_share(list_id, user, role)
+                  return format_response({})
+              except permissions.ShareExists:
+                  return format_response({"message": "Share already exists"}, 400)
+
+
+          def update_share(list_id: int, user: str, role: str) -> Response:
+              permissions.update_share(list_id, user, role)
+              return format_response({})
+
+
+          def delete_share(list_id: int, user: str) -> Response:
+              permissions.delete_share(list_id, user)
+              return format_response({})
+
+
+          def list_shared_lists(user: str) -> Response:
+              return format_response({"sharedLists": permissions.list_shared_lists(user)})
+
+
+          def format_response(body: object, status_code=200) -> object:
+              result = {
+                  "statusCode": status_code,
+                  "headers": {
+                      "Content-Type": "application/json",
+                      "Access-Control-Allow-Origin": "*",
+                  },
+                  "body": json.dumps(body, default=lambda o: o.__dict__),
+              }
+              debug_object(result)
+              return result
+
+      Role:
+        Fn::GetAtt:
+          - TinyTodoApiLambdaServiceRole879744AD
+          - Arn
+      Environment:
+        Variables:
+          POLICY_STORE_ID: ""
+          TASK_LIST_EDITOR_TEMPLATE_ID: ""
+          TASK_LIST_VIEWER_TEMPLATE_ID: ""
+          AWS_DATA_PATH: ./models
+      FunctionName: TinyTodoApiLambda
+      Handler: handler.handler
+      MemorySize: 1024
+      Runtime: python3.9
+      Timeout: 30
+    DependsOn:
+      - TinyTodoApiLambdaServiceRoleDefaultPolicy3A4DA593
+      - TinyTodoApiLambdaServiceRole879744AD
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoApiLambda/Resource
+      aws:asset:path: asset.ebfa94b2eaed3fc3819f5db0d9dad638e70fb4d98f1a0b6bdda733601f937258
+      aws:asset:is-bundled: false
+      aws:asset:property: Code
+  TinyTodoApiLambdaInvokeFcyXBRX02EWa52GlFECQiCzDt0fdRUDi4mo4foC5aUB337CC06:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName:
+        Fn::GetAtt:
+          - TinyTodoApiLambda63A29A37
+          - Arn
+      Principal: apigateway.amazonaws.com
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoApiLambda/InvokeFcyXBRX02EWa52GlF+ECQiCzDt0fdRUDi4mo4foC5aU=
+  TinyTodoApiBA42A1EF:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: TinyTodoApi
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoApi/Resource
+  TinyTodoApiCloudWatchRole52A84C0F:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: apigateway.amazonaws.com
+        Version: "2012-10-17"
+      ManagedPolicyArns:
+        - Fn::Join:
+            - ""
+            - - "arn:"
+              - Ref: AWS::Partition
+              - :iam::aws:policy/service-role/AmazonAPIGatewayPushToCloudWatchLogs
+    UpdateReplacePolicy: Retain
+    DeletionPolicy: Retain
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoApi/CloudWatchRole/Resource
+  TinyTodoApiAccountA353E11F:
+    Type: AWS::ApiGateway::Account
+    Properties:
+      CloudWatchRoleArn:
+        Fn::GetAtt:
+          - TinyTodoApiCloudWatchRole52A84C0F
+          - Arn
+    DependsOn:
+      - TinyTodoApiBA42A1EF
+    UpdateReplacePolicy: Retain
+    DeletionPolicy: Retain
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoApi/Account
+  TinyTodoApiDeploymentEED5E0ED81420b6028de4e0f4a57c5813e01849a:
+    Type: AWS::ApiGateway::Deployment
+    Properties:
+      RestApiId:
+        Ref: TinyTodoApiBA42A1EF
+      Description: Automatically created by the RestApi construct
+    DependsOn:
+      - TinyTodoApilistOPTIONSDF1C31EA
+      - TinyTodoApilist9AC69F64
+      - TinyTodoApilistsharedlistsGET0B5EA757
+      - TinyTodoApilistsharedlistsOPTIONS84588149
+      - TinyTodoApilistsharedlists45CC3D6A
+      - TinyTodoApilistsharesGET3F6E241B
+      - TinyTodoApilistsharesOPTIONSFEF12253
+      - TinyTodoApilistsharesD7972584
+      - TinyTodoApilisttasklistsGET6E89C73F
+      - TinyTodoApilisttasklistsOPTIONS1DAB0F89
+      - TinyTodoApilisttasklists17DCC0A1
+      - TinyTodoApilisttasksGET58822315
+      - TinyTodoApilisttasksOPTIONSE87D6F89
+      - TinyTodoApilisttasks015AE2AC
+      - TinyTodoApilogoutOPTIONSFAF2DFCE
+      - TinyTodoApilogoutPOST09CC5A3C
+      - TinyTodoApilogout4AF81102
+      - TinyTodoApiOPTIONSD3BF5469
+      - TinyTodoApisharecreateOPTIONSA5A31F00
+      - TinyTodoApisharecreatePOST028994A7
+      - TinyTodoApisharecreate131202D7
+      - TinyTodoApisharedeleteDELETEFFAE4B55
+      - TinyTodoApisharedeleteOPTIONS0DA3A85D
+      - TinyTodoApisharedelete0D50BD28
+      - TinyTodoApishareOPTIONSCF1EB118
+      - TinyTodoApisharereadGETD42690B0
+      - TinyTodoApisharereadOPTIONS605737B2
+      - TinyTodoApishareread55E5914B
+      - TinyTodoApishare8A820625
+      - TinyTodoApishareupdateOPTIONS65FB39A8
+      - TinyTodoApishareupdatePUT4CDC7846
+      - TinyTodoApishareupdate1BA9E0A4
+      - TinyTodoApitasklistcreateOPTIONS9FD5EC6C
+      - TinyTodoApitasklistcreatePOSTC122EFCC
+      - TinyTodoApitasklistcreate76792B8C
+      - TinyTodoApitasklistdeleteDELETE0951F79E
+      - TinyTodoApitasklistdeleteOPTIONSCE93A27B
+      - TinyTodoApitasklistdelete12F97DBA
+      - TinyTodoApitasklistOPTIONS01328074
+      - TinyTodoApitasklistreadGET1DBD4D80
+      - TinyTodoApitasklistreadOPTIONSE2E2E36D
+      - TinyTodoApitasklistreadD3583271
+      - TinyTodoApitasklistEB19BD76
+      - TinyTodoApitasklistupdateOPTIONS271FB8B6
+      - TinyTodoApitasklistupdatePUT40301823
+      - TinyTodoApitasklistupdateFE2EAF02
+      - TinyTodoApitaskcreateOPTIONSC1B83FFD
+      - TinyTodoApitaskcreatePOST6D9984AA
+      - TinyTodoApitaskcreateE65EAA6E
+      - TinyTodoApitaskdeleteDELETEB5B2E953
+      - TinyTodoApitaskdeleteOPTIONS194B0049
+      - TinyTodoApitaskdelete08CCB0BF
+      - TinyTodoApitaskOPTIONSBC5C02A6
+      - TinyTodoApitaskreadGETA50E927F
+      - TinyTodoApitaskreadOPTIONSD8C9431B
+      - TinyTodoApitaskreadADDE8C8C
+      - TinyTodoApitaskDA5DD2A8
+      - TinyTodoApitaskupdateOPTIONSA1C4636A
+      - TinyTodoApitaskupdatePUT90EB08C7
+      - TinyTodoApitaskupdateAF230560
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoApi/Deployment/Resource
+  TinyTodoApiDeploymentStageprodF8B8765F:
+    Type: AWS::ApiGateway::Stage
+    Properties:
+      RestApiId:
+        Ref: TinyTodoApiBA42A1EF
+      DeploymentId:
+        Ref: TinyTodoApiDeploymentEED5E0ED81420b6028de4e0f4a57c5813e01849a
+      StageName: prod
+    DependsOn:
+      - TinyTodoApiAccountA353E11F
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoApi/DeploymentStage.prod/Resource
+  TinyTodoApiOPTIONSD3BF5469:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      HttpMethod: OPTIONS
+      ResourceId:
+        Fn::GetAtt:
+          - TinyTodoApiBA42A1EF
+          - RootResourceId
+      RestApiId:
+        Ref: TinyTodoApiBA42A1EF
+      AuthorizationType: NONE
+      Integration:
+        IntegrationResponses:
+          - ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-User-Agent'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+              method.response.header.Access-Control-Allow-Methods: "'OPTIONS,GET,PUT,POST,DELETE,PATCH,HEAD'"
+            StatusCode: "204"
+        RequestTemplates:
+          application/json: "{ statusCode: 200 }"
+        Type: MOCK
+      MethodResponses:
+        - ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Origin: true
+            method.response.header.Access-Control-Allow-Methods: true
+          StatusCode: "204"
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoApi/Default/OPTIONS/Resource
+  TinyTodoApilogout4AF81102:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId:
+        Fn::GetAtt:
+          - TinyTodoApiBA42A1EF
+          - RootResourceId
+      PathPart: logout
+      RestApiId:
+        Ref: TinyTodoApiBA42A1EF
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoApi/Default/logout/Resource
+  TinyTodoApilogoutOPTIONSFAF2DFCE:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      HttpMethod: OPTIONS
+      ResourceId:
+        Ref: TinyTodoApilogout4AF81102
+      RestApiId:
+        Ref: TinyTodoApiBA42A1EF
+      AuthorizationType: NONE
+      Integration:
+        IntegrationResponses:
+          - ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-User-Agent'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+              method.response.header.Access-Control-Allow-Methods: "'OPTIONS,GET,PUT,POST,DELETE,PATCH,HEAD'"
+            StatusCode: "204"
+        RequestTemplates:
+          application/json: "{ statusCode: 200 }"
+        Type: MOCK
+      MethodResponses:
+        - ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Origin: true
+            method.response.header.Access-Control-Allow-Methods: true
+          StatusCode: "204"
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoApi/Default/logout/OPTIONS/Resource
+  TinyTodoApilogoutPOST09CC5A3C:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      HttpMethod: POST
+      ResourceId:
+        Ref: TinyTodoApilogout4AF81102
+      RestApiId:
+        Ref: TinyTodoApiBA42A1EF
+      AuthorizationScopes:
+        - TinyTodoResourceServer/TinyTodoApi
+      AuthorizationType: COGNITO_USER_POOLS
+      AuthorizerId:
+        Ref: CognitoAuthorizer
+      Integration:
+        IntegrationHttpMethod: POST
+        Type: AWS_PROXY
+        Uri:
+          Fn::Join:
+            - ""
+            - - "arn:"
+              - Ref: AWS::Partition
+              - !Sub ":apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/"
+              - Fn::GetAtt:
+                  - TinyTodoApiLambda63A29A37
+                  - Arn
+              - /invocations
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoApi/Default/logout/POST/Resource
+  TinyTodoApitasklistEB19BD76:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId:
+        Fn::GetAtt:
+          - TinyTodoApiBA42A1EF
+          - RootResourceId
+      PathPart: task-list
+      RestApiId:
+        Ref: TinyTodoApiBA42A1EF
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoApi/Default/task-list/Resource
+  TinyTodoApitasklistOPTIONS01328074:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      HttpMethod: OPTIONS
+      ResourceId:
+        Ref: TinyTodoApitasklistEB19BD76
+      RestApiId:
+        Ref: TinyTodoApiBA42A1EF
+      AuthorizationType: NONE
+      Integration:
+        IntegrationResponses:
+          - ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-User-Agent'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+              method.response.header.Access-Control-Allow-Methods: "'OPTIONS,GET,PUT,POST,DELETE,PATCH,HEAD'"
+            StatusCode: "204"
+        RequestTemplates:
+          application/json: "{ statusCode: 200 }"
+        Type: MOCK
+      MethodResponses:
+        - ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Origin: true
+            method.response.header.Access-Control-Allow-Methods: true
+          StatusCode: "204"
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoApi/Default/task-list/OPTIONS/Resource
+  TinyTodoApitasklistcreate76792B8C:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId:
+        Ref: TinyTodoApitasklistEB19BD76
+      PathPart: create
+      RestApiId:
+        Ref: TinyTodoApiBA42A1EF
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoApi/Default/task-list/create/Resource
+  TinyTodoApitasklistcreateOPTIONS9FD5EC6C:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      HttpMethod: OPTIONS
+      ResourceId:
+        Ref: TinyTodoApitasklistcreate76792B8C
+      RestApiId:
+        Ref: TinyTodoApiBA42A1EF
+      AuthorizationType: NONE
+      Integration:
+        IntegrationResponses:
+          - ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-User-Agent'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+              method.response.header.Access-Control-Allow-Methods: "'OPTIONS,GET,PUT,POST,DELETE,PATCH,HEAD'"
+            StatusCode: "204"
+        RequestTemplates:
+          application/json: "{ statusCode: 200 }"
+        Type: MOCK
+      MethodResponses:
+        - ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Origin: true
+            method.response.header.Access-Control-Allow-Methods: true
+          StatusCode: "204"
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoApi/Default/task-list/create/OPTIONS/Resource
+  TinyTodoApitasklistcreatePOSTC122EFCC:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      HttpMethod: POST
+      ResourceId:
+        Ref: TinyTodoApitasklistcreate76792B8C
+      RestApiId:
+        Ref: TinyTodoApiBA42A1EF
+      AuthorizationScopes:
+        - TinyTodoResourceServer/TinyTodoApi
+      AuthorizationType: COGNITO_USER_POOLS
+      AuthorizerId:
+        Ref: CognitoAuthorizer
+      Integration:
+        IntegrationHttpMethod: POST
+        Type: AWS_PROXY
+        Uri:
+          Fn::Join:
+            - ""
+            - - "arn:"
+              - Ref: AWS::Partition
+              - !Sub ":apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/"
+              - Fn::GetAtt:
+                  - TinyTodoApiLambda63A29A37
+                  - Arn
+              - /invocations
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoApi/Default/task-list/create/POST/Resource
+  TinyTodoApitasklistreadD3583271:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId:
+        Ref: TinyTodoApitasklistEB19BD76
+      PathPart: read
+      RestApiId:
+        Ref: TinyTodoApiBA42A1EF
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoApi/Default/task-list/read/Resource
+  TinyTodoApitasklistreadOPTIONSE2E2E36D:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      HttpMethod: OPTIONS
+      ResourceId:
+        Ref: TinyTodoApitasklistreadD3583271
+      RestApiId:
+        Ref: TinyTodoApiBA42A1EF
+      AuthorizationType: NONE
+      Integration:
+        IntegrationResponses:
+          - ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-User-Agent'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+              method.response.header.Access-Control-Allow-Methods: "'OPTIONS,GET,PUT,POST,DELETE,PATCH,HEAD'"
+            StatusCode: "204"
+        RequestTemplates:
+          application/json: "{ statusCode: 200 }"
+        Type: MOCK
+      MethodResponses:
+        - ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Origin: true
+            method.response.header.Access-Control-Allow-Methods: true
+          StatusCode: "204"
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoApi/Default/task-list/read/OPTIONS/Resource
+  TinyTodoApitasklistreadGET1DBD4D80:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      HttpMethod: GET
+      ResourceId:
+        Ref: TinyTodoApitasklistreadD3583271
+      RestApiId:
+        Ref: TinyTodoApiBA42A1EF
+      AuthorizationScopes:
+        - TinyTodoResourceServer/TinyTodoApi
+      AuthorizationType: COGNITO_USER_POOLS
+      AuthorizerId:
+        Ref: CognitoAuthorizer
+      Integration:
+        IntegrationHttpMethod: POST
+        Type: AWS_PROXY
+        Uri:
+          Fn::Join:
+            - ""
+            - - "arn:"
+              - Ref: AWS::Partition
+              - !Sub ":apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/"
+              - Fn::GetAtt:
+                  - TinyTodoApiLambda63A29A37
+                  - Arn
+              - /invocations
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoApi/Default/task-list/read/GET/Resource
+  TinyTodoApitasklistupdateFE2EAF02:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId:
+        Ref: TinyTodoApitasklistEB19BD76
+      PathPart: update
+      RestApiId:
+        Ref: TinyTodoApiBA42A1EF
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoApi/Default/task-list/update/Resource
+  TinyTodoApitasklistupdateOPTIONS271FB8B6:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      HttpMethod: OPTIONS
+      ResourceId:
+        Ref: TinyTodoApitasklistupdateFE2EAF02
+      RestApiId:
+        Ref: TinyTodoApiBA42A1EF
+      AuthorizationType: NONE
+      Integration:
+        IntegrationResponses:
+          - ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-User-Agent'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+              method.response.header.Access-Control-Allow-Methods: "'OPTIONS,GET,PUT,POST,DELETE,PATCH,HEAD'"
+            StatusCode: "204"
+        RequestTemplates:
+          application/json: "{ statusCode: 200 }"
+        Type: MOCK
+      MethodResponses:
+        - ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Origin: true
+            method.response.header.Access-Control-Allow-Methods: true
+          StatusCode: "204"
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoApi/Default/task-list/update/OPTIONS/Resource
+  TinyTodoApitasklistupdatePUT40301823:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      HttpMethod: PUT
+      ResourceId:
+        Ref: TinyTodoApitasklistupdateFE2EAF02
+      RestApiId:
+        Ref: TinyTodoApiBA42A1EF
+      AuthorizationScopes:
+        - TinyTodoResourceServer/TinyTodoApi
+      AuthorizationType: COGNITO_USER_POOLS
+      AuthorizerId:
+        Ref: CognitoAuthorizer
+      Integration:
+        IntegrationHttpMethod: POST
+        Type: AWS_PROXY
+        Uri:
+          Fn::Join:
+            - ""
+            - - "arn:"
+              - Ref: AWS::Partition
+              - !Sub ":apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/"
+              - Fn::GetAtt:
+                  - TinyTodoApiLambda63A29A37
+                  - Arn
+              - /invocations
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoApi/Default/task-list/update/PUT/Resource
+  TinyTodoApitasklistdelete12F97DBA:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId:
+        Ref: TinyTodoApitasklistEB19BD76
+      PathPart: delete
+      RestApiId:
+        Ref: TinyTodoApiBA42A1EF
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoApi/Default/task-list/delete/Resource
+  TinyTodoApitasklistdeleteOPTIONSCE93A27B:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      HttpMethod: OPTIONS
+      ResourceId:
+        Ref: TinyTodoApitasklistdelete12F97DBA
+      RestApiId:
+        Ref: TinyTodoApiBA42A1EF
+      AuthorizationType: NONE
+      Integration:
+        IntegrationResponses:
+          - ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-User-Agent'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+              method.response.header.Access-Control-Allow-Methods: "'OPTIONS,GET,PUT,POST,DELETE,PATCH,HEAD'"
+            StatusCode: "204"
+        RequestTemplates:
+          application/json: "{ statusCode: 200 }"
+        Type: MOCK
+      MethodResponses:
+        - ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Origin: true
+            method.response.header.Access-Control-Allow-Methods: true
+          StatusCode: "204"
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoApi/Default/task-list/delete/OPTIONS/Resource
+  TinyTodoApitasklistdeleteDELETE0951F79E:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      HttpMethod: DELETE
+      ResourceId:
+        Ref: TinyTodoApitasklistdelete12F97DBA
+      RestApiId:
+        Ref: TinyTodoApiBA42A1EF
+      AuthorizationScopes:
+        - TinyTodoResourceServer/TinyTodoApi
+      AuthorizationType: COGNITO_USER_POOLS
+      AuthorizerId:
+        Ref: CognitoAuthorizer
+      Integration:
+        IntegrationHttpMethod: POST
+        Type: AWS_PROXY
+        Uri:
+          Fn::Join:
+            - ""
+            - - "arn:"
+              - Ref: AWS::Partition
+              - !Sub ":apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/"
+              - Fn::GetAtt:
+                  - TinyTodoApiLambda63A29A37
+                  - Arn
+              - /invocations
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoApi/Default/task-list/delete/DELETE/Resource
+  TinyTodoApitaskDA5DD2A8:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId:
+        Fn::GetAtt:
+          - TinyTodoApiBA42A1EF
+          - RootResourceId
+      PathPart: task
+      RestApiId:
+        Ref: TinyTodoApiBA42A1EF
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoApi/Default/task/Resource
+  TinyTodoApitaskOPTIONSBC5C02A6:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      HttpMethod: OPTIONS
+      ResourceId:
+        Ref: TinyTodoApitaskDA5DD2A8
+      RestApiId:
+        Ref: TinyTodoApiBA42A1EF
+      AuthorizationType: NONE
+      Integration:
+        IntegrationResponses:
+          - ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-User-Agent'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+              method.response.header.Access-Control-Allow-Methods: "'OPTIONS,GET,PUT,POST,DELETE,PATCH,HEAD'"
+            StatusCode: "204"
+        RequestTemplates:
+          application/json: "{ statusCode: 200 }"
+        Type: MOCK
+      MethodResponses:
+        - ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Origin: true
+            method.response.header.Access-Control-Allow-Methods: true
+          StatusCode: "204"
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoApi/Default/task/OPTIONS/Resource
+  TinyTodoApitaskcreateE65EAA6E:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId:
+        Ref: TinyTodoApitaskDA5DD2A8
+      PathPart: create
+      RestApiId:
+        Ref: TinyTodoApiBA42A1EF
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoApi/Default/task/create/Resource
+  TinyTodoApitaskcreateOPTIONSC1B83FFD:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      HttpMethod: OPTIONS
+      ResourceId:
+        Ref: TinyTodoApitaskcreateE65EAA6E
+      RestApiId:
+        Ref: TinyTodoApiBA42A1EF
+      AuthorizationType: NONE
+      Integration:
+        IntegrationResponses:
+          - ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-User-Agent'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+              method.response.header.Access-Control-Allow-Methods: "'OPTIONS,GET,PUT,POST,DELETE,PATCH,HEAD'"
+            StatusCode: "204"
+        RequestTemplates:
+          application/json: "{ statusCode: 200 }"
+        Type: MOCK
+      MethodResponses:
+        - ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Origin: true
+            method.response.header.Access-Control-Allow-Methods: true
+          StatusCode: "204"
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoApi/Default/task/create/OPTIONS/Resource
+  TinyTodoApitaskcreatePOST6D9984AA:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      HttpMethod: POST
+      ResourceId:
+        Ref: TinyTodoApitaskcreateE65EAA6E
+      RestApiId:
+        Ref: TinyTodoApiBA42A1EF
+      AuthorizationScopes:
+        - TinyTodoResourceServer/TinyTodoApi
+      AuthorizationType: COGNITO_USER_POOLS
+      AuthorizerId:
+        Ref: CognitoAuthorizer
+      Integration:
+        IntegrationHttpMethod: POST
+        Type: AWS_PROXY
+        Uri:
+          Fn::Join:
+            - ""
+            - - "arn:"
+              - Ref: AWS::Partition
+              - !Sub ":apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/"
+              - Fn::GetAtt:
+                  - TinyTodoApiLambda63A29A37
+                  - Arn
+              - /invocations
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoApi/Default/task/create/POST/Resource
+  TinyTodoApitaskreadADDE8C8C:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId:
+        Ref: TinyTodoApitaskDA5DD2A8
+      PathPart: read
+      RestApiId:
+        Ref: TinyTodoApiBA42A1EF
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoApi/Default/task/read/Resource
+  TinyTodoApitaskreadOPTIONSD8C9431B:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      HttpMethod: OPTIONS
+      ResourceId:
+        Ref: TinyTodoApitaskreadADDE8C8C
+      RestApiId:
+        Ref: TinyTodoApiBA42A1EF
+      AuthorizationType: NONE
+      Integration:
+        IntegrationResponses:
+          - ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-User-Agent'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+              method.response.header.Access-Control-Allow-Methods: "'OPTIONS,GET,PUT,POST,DELETE,PATCH,HEAD'"
+            StatusCode: "204"
+        RequestTemplates:
+          application/json: "{ statusCode: 200 }"
+        Type: MOCK
+      MethodResponses:
+        - ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Origin: true
+            method.response.header.Access-Control-Allow-Methods: true
+          StatusCode: "204"
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoApi/Default/task/read/OPTIONS/Resource
+  TinyTodoApitaskreadGETA50E927F:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      HttpMethod: GET
+      ResourceId:
+        Ref: TinyTodoApitaskreadADDE8C8C
+      RestApiId:
+        Ref: TinyTodoApiBA42A1EF
+      AuthorizationScopes:
+        - TinyTodoResourceServer/TinyTodoApi
+      AuthorizationType: COGNITO_USER_POOLS
+      AuthorizerId:
+        Ref: CognitoAuthorizer
+      Integration:
+        IntegrationHttpMethod: POST
+        Type: AWS_PROXY
+        Uri:
+          Fn::Join:
+            - ""
+            - - "arn:"
+              - Ref: AWS::Partition
+              - !Sub ":apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/"
+              - Fn::GetAtt:
+                  - TinyTodoApiLambda63A29A37
+                  - Arn
+              - /invocations
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoApi/Default/task/read/GET/Resource
+  TinyTodoApitaskupdateAF230560:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId:
+        Ref: TinyTodoApitaskDA5DD2A8
+      PathPart: update
+      RestApiId:
+        Ref: TinyTodoApiBA42A1EF
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoApi/Default/task/update/Resource
+  TinyTodoApitaskupdateOPTIONSA1C4636A:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      HttpMethod: OPTIONS
+      ResourceId:
+        Ref: TinyTodoApitaskupdateAF230560
+      RestApiId:
+        Ref: TinyTodoApiBA42A1EF
+      AuthorizationType: NONE
+      Integration:
+        IntegrationResponses:
+          - ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-User-Agent'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+              method.response.header.Access-Control-Allow-Methods: "'OPTIONS,GET,PUT,POST,DELETE,PATCH,HEAD'"
+            StatusCode: "204"
+        RequestTemplates:
+          application/json: "{ statusCode: 200 }"
+        Type: MOCK
+      MethodResponses:
+        - ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Origin: true
+            method.response.header.Access-Control-Allow-Methods: true
+          StatusCode: "204"
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoApi/Default/task/update/OPTIONS/Resource
+  TinyTodoApitaskupdatePUT90EB08C7:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      HttpMethod: PUT
+      ResourceId:
+        Ref: TinyTodoApitaskupdateAF230560
+      RestApiId:
+        Ref: TinyTodoApiBA42A1EF
+      AuthorizationScopes:
+        - TinyTodoResourceServer/TinyTodoApi
+      AuthorizationType: COGNITO_USER_POOLS
+      AuthorizerId:
+        Ref: CognitoAuthorizer
+      Integration:
+        IntegrationHttpMethod: POST
+        Type: AWS_PROXY
+        Uri:
+          Fn::Join:
+            - ""
+            - - "arn:"
+              - Ref: AWS::Partition
+              - !Sub ":apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/"
+              - Fn::GetAtt:
+                  - TinyTodoApiLambda63A29A37
+                  - Arn
+              - /invocations
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoApi/Default/task/update/PUT/Resource
+  TinyTodoApitaskdelete08CCB0BF:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId:
+        Ref: TinyTodoApitaskDA5DD2A8
+      PathPart: delete
+      RestApiId:
+        Ref: TinyTodoApiBA42A1EF
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoApi/Default/task/delete/Resource
+  TinyTodoApitaskdeleteOPTIONS194B0049:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      HttpMethod: OPTIONS
+      ResourceId:
+        Ref: TinyTodoApitaskdelete08CCB0BF
+      RestApiId:
+        Ref: TinyTodoApiBA42A1EF
+      AuthorizationType: NONE
+      Integration:
+        IntegrationResponses:
+          - ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-User-Agent'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+              method.response.header.Access-Control-Allow-Methods: "'OPTIONS,GET,PUT,POST,DELETE,PATCH,HEAD'"
+            StatusCode: "204"
+        RequestTemplates:
+          application/json: "{ statusCode: 200 }"
+        Type: MOCK
+      MethodResponses:
+        - ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Origin: true
+            method.response.header.Access-Control-Allow-Methods: true
+          StatusCode: "204"
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoApi/Default/task/delete/OPTIONS/Resource
+  TinyTodoApitaskdeleteDELETEB5B2E953:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      HttpMethod: DELETE
+      ResourceId:
+        Ref: TinyTodoApitaskdelete08CCB0BF
+      RestApiId:
+        Ref: TinyTodoApiBA42A1EF
+      AuthorizationScopes:
+        - TinyTodoResourceServer/TinyTodoApi
+      AuthorizationType: COGNITO_USER_POOLS
+      AuthorizerId:
+        Ref: CognitoAuthorizer
+      Integration:
+        IntegrationHttpMethod: POST
+        Type: AWS_PROXY
+        Uri:
+          Fn::Join:
+            - ""
+            - - "arn:"
+              - Ref: AWS::Partition
+              - !Sub ":apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/"
+              - Fn::GetAtt:
+                  - TinyTodoApiLambda63A29A37
+                  - Arn
+              - /invocations
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoApi/Default/task/delete/DELETE/Resource
+  TinyTodoApishare8A820625:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId:
+        Fn::GetAtt:
+          - TinyTodoApiBA42A1EF
+          - RootResourceId
+      PathPart: share
+      RestApiId:
+        Ref: TinyTodoApiBA42A1EF
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoApi/Default/share/Resource
+  TinyTodoApishareOPTIONSCF1EB118:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      HttpMethod: OPTIONS
+      ResourceId:
+        Ref: TinyTodoApishare8A820625
+      RestApiId:
+        Ref: TinyTodoApiBA42A1EF
+      AuthorizationType: NONE
+      Integration:
+        IntegrationResponses:
+          - ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-User-Agent'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+              method.response.header.Access-Control-Allow-Methods: "'OPTIONS,GET,PUT,POST,DELETE,PATCH,HEAD'"
+            StatusCode: "204"
+        RequestTemplates:
+          application/json: "{ statusCode: 200 }"
+        Type: MOCK
+      MethodResponses:
+        - ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Origin: true
+            method.response.header.Access-Control-Allow-Methods: true
+          StatusCode: "204"
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoApi/Default/share/OPTIONS/Resource
+  TinyTodoApisharecreate131202D7:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId:
+        Ref: TinyTodoApishare8A820625
+      PathPart: create
+      RestApiId:
+        Ref: TinyTodoApiBA42A1EF
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoApi/Default/share/create/Resource
+  TinyTodoApisharecreateOPTIONSA5A31F00:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      HttpMethod: OPTIONS
+      ResourceId:
+        Ref: TinyTodoApisharecreate131202D7
+      RestApiId:
+        Ref: TinyTodoApiBA42A1EF
+      AuthorizationType: NONE
+      Integration:
+        IntegrationResponses:
+          - ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-User-Agent'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+              method.response.header.Access-Control-Allow-Methods: "'OPTIONS,GET,PUT,POST,DELETE,PATCH,HEAD'"
+            StatusCode: "204"
+        RequestTemplates:
+          application/json: "{ statusCode: 200 }"
+        Type: MOCK
+      MethodResponses:
+        - ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Origin: true
+            method.response.header.Access-Control-Allow-Methods: true
+          StatusCode: "204"
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoApi/Default/share/create/OPTIONS/Resource
+  TinyTodoApisharecreatePOST028994A7:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      HttpMethod: POST
+      ResourceId:
+        Ref: TinyTodoApisharecreate131202D7
+      RestApiId:
+        Ref: TinyTodoApiBA42A1EF
+      AuthorizationScopes:
+        - TinyTodoResourceServer/TinyTodoApi
+      AuthorizationType: COGNITO_USER_POOLS
+      AuthorizerId:
+        Ref: CognitoAuthorizer
+      Integration:
+        IntegrationHttpMethod: POST
+        Type: AWS_PROXY
+        Uri:
+          Fn::Join:
+            - ""
+            - - "arn:"
+              - Ref: AWS::Partition
+              - !Sub ":apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/"
+              - Fn::GetAtt:
+                  - TinyTodoApiLambda63A29A37
+                  - Arn
+              - /invocations
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoApi/Default/share/create/POST/Resource
+  TinyTodoApishareread55E5914B:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId:
+        Ref: TinyTodoApishare8A820625
+      PathPart: read
+      RestApiId:
+        Ref: TinyTodoApiBA42A1EF
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoApi/Default/share/read/Resource
+  TinyTodoApisharereadOPTIONS605737B2:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      HttpMethod: OPTIONS
+      ResourceId:
+        Ref: TinyTodoApishareread55E5914B
+      RestApiId:
+        Ref: TinyTodoApiBA42A1EF
+      AuthorizationType: NONE
+      Integration:
+        IntegrationResponses:
+          - ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-User-Agent'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+              method.response.header.Access-Control-Allow-Methods: "'OPTIONS,GET,PUT,POST,DELETE,PATCH,HEAD'"
+            StatusCode: "204"
+        RequestTemplates:
+          application/json: "{ statusCode: 200 }"
+        Type: MOCK
+      MethodResponses:
+        - ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Origin: true
+            method.response.header.Access-Control-Allow-Methods: true
+          StatusCode: "204"
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoApi/Default/share/read/OPTIONS/Resource
+  TinyTodoApisharereadGETD42690B0:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      HttpMethod: GET
+      ResourceId:
+        Ref: TinyTodoApishareread55E5914B
+      RestApiId:
+        Ref: TinyTodoApiBA42A1EF
+      AuthorizationScopes:
+        - TinyTodoResourceServer/TinyTodoApi
+      AuthorizationType: COGNITO_USER_POOLS
+      AuthorizerId:
+        Ref: CognitoAuthorizer
+      Integration:
+        IntegrationHttpMethod: POST
+        Type: AWS_PROXY
+        Uri:
+          Fn::Join:
+            - ""
+            - - "arn:"
+              - Ref: AWS::Partition
+              - !Sub ":apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/"
+              - Fn::GetAtt:
+                  - TinyTodoApiLambda63A29A37
+                  - Arn
+              - /invocations
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoApi/Default/share/read/GET/Resource
+  TinyTodoApishareupdate1BA9E0A4:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId:
+        Ref: TinyTodoApishare8A820625
+      PathPart: update
+      RestApiId:
+        Ref: TinyTodoApiBA42A1EF
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoApi/Default/share/update/Resource
+  TinyTodoApishareupdateOPTIONS65FB39A8:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      HttpMethod: OPTIONS
+      ResourceId:
+        Ref: TinyTodoApishareupdate1BA9E0A4
+      RestApiId:
+        Ref: TinyTodoApiBA42A1EF
+      AuthorizationType: NONE
+      Integration:
+        IntegrationResponses:
+          - ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-User-Agent'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+              method.response.header.Access-Control-Allow-Methods: "'OPTIONS,GET,PUT,POST,DELETE,PATCH,HEAD'"
+            StatusCode: "204"
+        RequestTemplates:
+          application/json: "{ statusCode: 200 }"
+        Type: MOCK
+      MethodResponses:
+        - ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Origin: true
+            method.response.header.Access-Control-Allow-Methods: true
+          StatusCode: "204"
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoApi/Default/share/update/OPTIONS/Resource
+  TinyTodoApishareupdatePUT4CDC7846:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      HttpMethod: PUT
+      ResourceId:
+        Ref: TinyTodoApishareupdate1BA9E0A4
+      RestApiId:
+        Ref: TinyTodoApiBA42A1EF
+      AuthorizationScopes:
+        - TinyTodoResourceServer/TinyTodoApi
+      AuthorizationType: COGNITO_USER_POOLS
+      AuthorizerId:
+        Ref: CognitoAuthorizer
+      Integration:
+        IntegrationHttpMethod: POST
+        Type: AWS_PROXY
+        Uri:
+          Fn::Join:
+            - ""
+            - - "arn:"
+              - Ref: AWS::Partition
+              - !Sub ":apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/"
+              - Fn::GetAtt:
+                  - TinyTodoApiLambda63A29A37
+                  - Arn
+              - /invocations
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoApi/Default/share/update/PUT/Resource
+  TinyTodoApisharedelete0D50BD28:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId:
+        Ref: TinyTodoApishare8A820625
+      PathPart: delete
+      RestApiId:
+        Ref: TinyTodoApiBA42A1EF
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoApi/Default/share/delete/Resource
+  TinyTodoApisharedeleteOPTIONS0DA3A85D:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      HttpMethod: OPTIONS
+      ResourceId:
+        Ref: TinyTodoApisharedelete0D50BD28
+      RestApiId:
+        Ref: TinyTodoApiBA42A1EF
+      AuthorizationType: NONE
+      Integration:
+        IntegrationResponses:
+          - ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-User-Agent'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+              method.response.header.Access-Control-Allow-Methods: "'OPTIONS,GET,PUT,POST,DELETE,PATCH,HEAD'"
+            StatusCode: "204"
+        RequestTemplates:
+          application/json: "{ statusCode: 200 }"
+        Type: MOCK
+      MethodResponses:
+        - ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Origin: true
+            method.response.header.Access-Control-Allow-Methods: true
+          StatusCode: "204"
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoApi/Default/share/delete/OPTIONS/Resource
+  TinyTodoApisharedeleteDELETEFFAE4B55:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      HttpMethod: DELETE
+      ResourceId:
+        Ref: TinyTodoApisharedelete0D50BD28
+      RestApiId:
+        Ref: TinyTodoApiBA42A1EF
+      AuthorizationScopes:
+        - TinyTodoResourceServer/TinyTodoApi
+      AuthorizationType: COGNITO_USER_POOLS
+      AuthorizerId:
+        Ref: CognitoAuthorizer
+      Integration:
+        IntegrationHttpMethod: POST
+        Type: AWS_PROXY
+        Uri:
+          Fn::Join:
+            - ""
+            - - "arn:"
+              - Ref: AWS::Partition
+              - !Sub ":apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/"
+              - Fn::GetAtt:
+                  - TinyTodoApiLambda63A29A37
+                  - Arn
+              - /invocations
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoApi/Default/share/delete/DELETE/Resource
+  TinyTodoApilist9AC69F64:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId:
+        Fn::GetAtt:
+          - TinyTodoApiBA42A1EF
+          - RootResourceId
+      PathPart: list
+      RestApiId:
+        Ref: TinyTodoApiBA42A1EF
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoApi/Default/list/Resource
+  TinyTodoApilistOPTIONSDF1C31EA:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      HttpMethod: OPTIONS
+      ResourceId:
+        Ref: TinyTodoApilist9AC69F64
+      RestApiId:
+        Ref: TinyTodoApiBA42A1EF
+      AuthorizationType: NONE
+      Integration:
+        IntegrationResponses:
+          - ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-User-Agent'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+              method.response.header.Access-Control-Allow-Methods: "'OPTIONS,GET,PUT,POST,DELETE,PATCH,HEAD'"
+            StatusCode: "204"
+        RequestTemplates:
+          application/json: "{ statusCode: 200 }"
+        Type: MOCK
+      MethodResponses:
+        - ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Origin: true
+            method.response.header.Access-Control-Allow-Methods: true
+          StatusCode: "204"
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoApi/Default/list/OPTIONS/Resource
+  TinyTodoApilisttasklists17DCC0A1:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId:
+        Ref: TinyTodoApilist9AC69F64
+      PathPart: task-lists
+      RestApiId:
+        Ref: TinyTodoApiBA42A1EF
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoApi/Default/list/task-lists/Resource
+  TinyTodoApilisttasklistsOPTIONS1DAB0F89:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      HttpMethod: OPTIONS
+      ResourceId:
+        Ref: TinyTodoApilisttasklists17DCC0A1
+      RestApiId:
+        Ref: TinyTodoApiBA42A1EF
+      AuthorizationType: NONE
+      Integration:
+        IntegrationResponses:
+          - ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-User-Agent'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+              method.response.header.Access-Control-Allow-Methods: "'OPTIONS,GET,PUT,POST,DELETE,PATCH,HEAD'"
+            StatusCode: "204"
+        RequestTemplates:
+          application/json: "{ statusCode: 200 }"
+        Type: MOCK
+      MethodResponses:
+        - ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Origin: true
+            method.response.header.Access-Control-Allow-Methods: true
+          StatusCode: "204"
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoApi/Default/list/task-lists/OPTIONS/Resource
+  TinyTodoApilisttasklistsGET6E89C73F:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      HttpMethod: GET
+      ResourceId:
+        Ref: TinyTodoApilisttasklists17DCC0A1
+      RestApiId:
+        Ref: TinyTodoApiBA42A1EF
+      AuthorizationScopes:
+        - TinyTodoResourceServer/TinyTodoApi
+      AuthorizationType: COGNITO_USER_POOLS
+      AuthorizerId:
+        Ref: CognitoAuthorizer
+      Integration:
+        IntegrationHttpMethod: POST
+        Type: AWS_PROXY
+        Uri:
+          Fn::Join:
+            - ""
+            - - "arn:"
+              - Ref: AWS::Partition
+              - !Sub ":apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/"
+              - Fn::GetAtt:
+                  - TinyTodoApiLambda63A29A37
+                  - Arn
+              - /invocations
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoApi/Default/list/task-lists/GET/Resource
+  TinyTodoApilisttasks015AE2AC:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId:
+        Ref: TinyTodoApilist9AC69F64
+      PathPart: tasks
+      RestApiId:
+        Ref: TinyTodoApiBA42A1EF
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoApi/Default/list/tasks/Resource
+  TinyTodoApilisttasksOPTIONSE87D6F89:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      HttpMethod: OPTIONS
+      ResourceId:
+        Ref: TinyTodoApilisttasks015AE2AC
+      RestApiId:
+        Ref: TinyTodoApiBA42A1EF
+      AuthorizationType: NONE
+      Integration:
+        IntegrationResponses:
+          - ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-User-Agent'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+              method.response.header.Access-Control-Allow-Methods: "'OPTIONS,GET,PUT,POST,DELETE,PATCH,HEAD'"
+            StatusCode: "204"
+        RequestTemplates:
+          application/json: "{ statusCode: 200 }"
+        Type: MOCK
+      MethodResponses:
+        - ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Origin: true
+            method.response.header.Access-Control-Allow-Methods: true
+          StatusCode: "204"
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoApi/Default/list/tasks/OPTIONS/Resource
+  TinyTodoApilisttasksGET58822315:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      HttpMethod: GET
+      ResourceId:
+        Ref: TinyTodoApilisttasks015AE2AC
+      RestApiId:
+        Ref: TinyTodoApiBA42A1EF
+      AuthorizationScopes:
+        - TinyTodoResourceServer/TinyTodoApi
+      AuthorizationType: COGNITO_USER_POOLS
+      AuthorizerId:
+        Ref: CognitoAuthorizer
+      Integration:
+        IntegrationHttpMethod: POST
+        Type: AWS_PROXY
+        Uri:
+          Fn::Join:
+            - ""
+            - - "arn:"
+              - Ref: AWS::Partition
+              - !Sub ":apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/"
+              - Fn::GetAtt:
+                  - TinyTodoApiLambda63A29A37
+                  - Arn
+              - /invocations
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoApi/Default/list/tasks/GET/Resource
+  TinyTodoApilistsharesD7972584:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId:
+        Ref: TinyTodoApilist9AC69F64
+      PathPart: shares
+      RestApiId:
+        Ref: TinyTodoApiBA42A1EF
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoApi/Default/list/shares/Resource
+  TinyTodoApilistsharesOPTIONSFEF12253:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      HttpMethod: OPTIONS
+      ResourceId:
+        Ref: TinyTodoApilistsharesD7972584
+      RestApiId:
+        Ref: TinyTodoApiBA42A1EF
+      AuthorizationType: NONE
+      Integration:
+        IntegrationResponses:
+          - ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-User-Agent'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+              method.response.header.Access-Control-Allow-Methods: "'OPTIONS,GET,PUT,POST,DELETE,PATCH,HEAD'"
+            StatusCode: "204"
+        RequestTemplates:
+          application/json: "{ statusCode: 200 }"
+        Type: MOCK
+      MethodResponses:
+        - ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Origin: true
+            method.response.header.Access-Control-Allow-Methods: true
+          StatusCode: "204"
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoApi/Default/list/shares/OPTIONS/Resource
+  TinyTodoApilistsharesGET3F6E241B:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      HttpMethod: GET
+      ResourceId:
+        Ref: TinyTodoApilistsharesD7972584
+      RestApiId:
+        Ref: TinyTodoApiBA42A1EF
+      AuthorizationScopes:
+        - TinyTodoResourceServer/TinyTodoApi
+      AuthorizationType: COGNITO_USER_POOLS
+      AuthorizerId:
+        Ref: CognitoAuthorizer
+      Integration:
+        IntegrationHttpMethod: POST
+        Type: AWS_PROXY
+        Uri:
+          Fn::Join:
+            - ""
+            - - "arn:"
+              - Ref: AWS::Partition
+              - !Sub ":apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/"
+              - Fn::GetAtt:
+                  - TinyTodoApiLambda63A29A37
+                  - Arn
+              - /invocations
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoApi/Default/list/shares/GET/Resource
+  TinyTodoApilistsharedlists45CC3D6A:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId:
+        Ref: TinyTodoApilist9AC69F64
+      PathPart: shared-lists
+      RestApiId:
+        Ref: TinyTodoApiBA42A1EF
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoApi/Default/list/shared-lists/Resource
+  TinyTodoApilistsharedlistsOPTIONS84588149:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      HttpMethod: OPTIONS
+      ResourceId:
+        Ref: TinyTodoApilistsharedlists45CC3D6A
+      RestApiId:
+        Ref: TinyTodoApiBA42A1EF
+      AuthorizationType: NONE
+      Integration:
+        IntegrationResponses:
+          - ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-User-Agent'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+              method.response.header.Access-Control-Allow-Methods: "'OPTIONS,GET,PUT,POST,DELETE,PATCH,HEAD'"
+            StatusCode: "204"
+        RequestTemplates:
+          application/json: "{ statusCode: 200 }"
+        Type: MOCK
+      MethodResponses:
+        - ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Origin: true
+            method.response.header.Access-Control-Allow-Methods: true
+          StatusCode: "204"
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoApi/Default/list/shared-lists/OPTIONS/Resource
+  TinyTodoApilistsharedlistsGET0B5EA757:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      HttpMethod: GET
+      ResourceId:
+        Ref: TinyTodoApilistsharedlists45CC3D6A
+      RestApiId:
+        Ref: TinyTodoApiBA42A1EF
+      AuthorizationScopes:
+        - TinyTodoResourceServer/TinyTodoApi
+      AuthorizationType: COGNITO_USER_POOLS
+      AuthorizerId:
+        Ref: CognitoAuthorizer
+      Integration:
+        IntegrationHttpMethod: POST
+        Type: AWS_PROXY
+        Uri:
+          Fn::Join:
+            - ""
+            - - "arn:"
+              - Ref: AWS::Partition
+              - !Sub ":apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/"
+              - Fn::GetAtt:
+                  - TinyTodoApiLambda63A29A37
+                  - Arn
+              - /invocations
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoApi/Default/list/shared-lists/GET/Resource
+  TinyTodoUserPoolPreSignUpCognito0EE92856:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName:
+        Fn::GetAtt:
+          - TinyTodoCognitoPreSignUpLambdaDCAA2584
+          - Arn
+      Principal: cognito-idp.amazonaws.com
+      SourceArn:
+        Fn::GetAtt:
+          - TinyTodoUserPool64049DBB
+          - Arn
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoUserPool/PreSignUpCognito
+  TinyTodoUserPoolPostConfirmationCognito7BED88AD:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName:
+        Fn::GetAtt:
+          - TinyTodoCognitoPostConfirmLambdaCF819FFA
+          - Arn
+      Principal: cognito-idp.amazonaws.com
+      SourceArn:
+        Fn::GetAtt:
+          - TinyTodoUserPool64049DBB
+          - Arn
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoUserPool/PostConfirmationCognito
+  TinyTodoUserPool64049DBB:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      AccountRecoverySetting:
+        RecoveryMechanisms:
+          - Name: verified_phone_number
+            Priority: 1
+          - Name: verified_email
+            Priority: 2
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: false
+      EmailVerificationMessage: The verification code to your new account is {####}
+      EmailVerificationSubject: Verify your new account
+      LambdaConfig:
+        PostConfirmation:
+          Fn::GetAtt:
+            - TinyTodoCognitoPostConfirmLambdaCF819FFA
+            - Arn
+        PreSignUp:
+          Fn::GetAtt:
+            - TinyTodoCognitoPreSignUpLambdaDCAA2584
+            - Arn
+      MfaConfiguration: "OFF"
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 6
+          RequireLowercase: false
+          RequireNumbers: false
+          RequireSymbols: false
+          RequireUppercase: false
+          TemporaryPasswordValidityDays: 7
+      SmsVerificationMessage: The verification code to your new account is {####}
+      UsernameConfiguration:
+        CaseSensitive: false
+      VerificationMessageTemplate:
+        DefaultEmailOption: CONFIRM_WITH_CODE
+        EmailMessage: The verification code to your new account is {####}
+        EmailSubject: Verify your new account
+        SmsMessage: The verification code to your new account is {####}
+    UpdateReplacePolicy: Delete
+    DeletionPolicy: Delete
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoUserPool/Resource
+  TinyTodoUserPoolTinyTodoResourceServerC36645D3:
+    Type: AWS::Cognito::UserPoolResourceServer
+    Properties:
+      Identifier: TinyTodoResourceServer
+      Name: TinyTodoResourceServer
+      UserPoolId:
+        Ref: TinyTodoUserPool64049DBB
+      Scopes:
+        - ScopeDescription: Access to the TinyTodo API
+          ScopeName: TinyTodoApi
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoUserPool/TinyTodoResourceServer/Resource
+  TinyTodoUserPoolTinyTodoClient4E62CF88:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      UserPoolId:
+        Ref: TinyTodoUserPool64049DBB
+      AccessTokenValidity: 60
+      AllowedOAuthFlows:
+        - implicit
+        - code
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthScopes:
+        - profile
+        - phone
+        - email
+        - openid
+        - aws.cognito.signin.user.admin
+        - Fn::Join:
+            - ""
+            - - Ref: TinyTodoUserPoolTinyTodoResourceServerC36645D3
+              - /TinyTodoApi
+      CallbackURLs:
+        - Ref: Cloud9PreviewUrl
+      ClientName: TinyTodoClient
+      EnableTokenRevocation: true
+      ExplicitAuthFlows:
+        - ALLOW_USER_PASSWORD_AUTH
+        - ALLOW_ADMIN_USER_PASSWORD_AUTH
+        - ALLOW_USER_SRP_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+      GenerateSecret: true
+      IdTokenValidity: 60
+      LogoutURLs:
+        - Ref: Cloud9PreviewUrl
+      PreventUserExistenceErrors: ENABLED
+      RefreshTokenValidity: 43200
+      SupportedIdentityProviders:
+        - COGNITO
+      TokenValidityUnits:
+        AccessToken: minutes
+        IdToken: minutes
+        RefreshToken: minutes
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoUserPool/TinyTodoClient/Resource
+  TinyTodoUserPoolTinyTodoDomainC3409CA8:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      Domain: !Ref CognitoDomainPrefix
+      UserPoolId:
+        Ref: TinyTodoUserPool64049DBB
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/TinyTodoUserPool/TinyTodoDomain/Resource
+  CognitoAuthorizer:
+    Type: AWS::ApiGateway::Authorizer
+    Properties:
+      Name: CognitoAuthorizer
+      RestApiId:
+        Ref: TinyTodoApiBA42A1EF
+      Type: COGNITO_USER_POOLS
+      IdentitySource: method.request.header.Authorization
+      ProviderARNs:
+        - Fn::GetAtt:
+            - TinyTodoUserPool64049DBB
+            - Arn
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/CognitoAuthorizer
+  CDKMetadata:
+    Type: AWS::CDK::Metadata
+    Properties:
+      Analytics: v2:deflate64:H4sIAAAAAAAA/12QTW/CMAyGfwv3kAHTpF0LaKdNQ7CdUUi9zpDEVT5AXZX/vjSlUHHy4/e1YzsL/jLjs4m4uKksT1OFB97uvJAnlqR9WzZGaCqT+CUOCtjqx2SITAl9KAVv34KRHsl01pg3YDU6l7LIUGjebqnvz3FDCmWT6zJF5p73wjnwjhddSDlfBnkCvxQOmKixEh4uouHte568BeeLGvOLdyykpGA8W0OtqNGQMKmjLN1W5TV6SK0UrIQ85AP8L5WdeaXBvQ65cRGSbfEPbGSSKoOeePvtwG6IVFdw4wGG7h3YM9hxyYMzyCuF1+UflCFdkxZoxgW9EuN97fyT3aFoqq7yM/g6+PE1kRkqgR/d03n+yucLPp8cHeLUpk9EDXzbx38LK18jJgIAAA==
+    Metadata:
+      aws:cdk:path: TinyTodoWorkshop/CDKMetadata/Default
+Outputs:
+  AppClientId:
+    Value:
+      Ref: TinyTodoUserPoolTinyTodoClient4E62CF88
+  ApiEndpoint:
+    Value:
+      Fn::Join:
+        - ""
+        - - https://
+          - Ref: TinyTodoApiBA42A1EF
+          - !Sub ".execute-api.${AWS::Region}."
+          - Ref: AWS::URLSuffix
+          - /
+          - Ref: TinyTodoApiDeploymentStageprodF8B8765F
+          - /
+  UserPoolId:
+    Value:
+      Ref: TinyTodoUserPool64049DBB

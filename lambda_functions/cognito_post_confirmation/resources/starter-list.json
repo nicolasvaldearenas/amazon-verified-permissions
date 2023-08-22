@@ -1,0 +1,30 @@
+{
+  "name": "Starter task list",
+  "description": "A list of tasks to get you started with your new project",
+  "tasks": [
+    {
+      "name": "Task 1 - Establish Project Scope And Metrics",
+      "description": "The first step to writing a project plan is defining what, exactly, your project is—including the project's purpose, parameters, and goals"
+    },
+    {
+      "name": "Task 2 - Identify Key Stakeholders",
+      "description": "Once you've defined your project scope, purpose, and metrics, it's time to get clear on who you need to bring the project to life—or, in other words, identify the key stakeholders of the project"
+    },
+    {
+      "name": "Task 3 - Outline Deliverables",
+      "description": "You need to outline all your project's deliverables—the real, tangible outcomes that your project needs to produce in order to be considered a success"
+    },
+    {
+      "name": "Task 4 - Develop Tasks",
+      "description": "Once you've clearly defined your project deliverables, you can drill down those deliverables into actionable tasks—tasks you can then assign to your team"
+    },
+    {
+      "name": "Task 5 - Assign Tasks And Deadlines",
+      "description": "Once you've written out all of your tasks, it's time to assign those tasks out to your team—along with deadlines as to when each task needs to be completed"
+    },
+    {
+      "name": "Task 6 - Share, Gather Feedback, And Adjust The Project Plan As Necessary",
+      "description": "If you want your project plan to be as strong and complete as it can be, it's important to share it with your team—and get their input on how they think it can be improved"
+    }
+  ]
+}
